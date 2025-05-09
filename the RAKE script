@@ -1,0 +1,196 @@
+-- The Rake: Remastered Enhanced Script
+-- Menu Toggle: M
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local Camera = workspace.CurrentCamera
+local espObjects = {}
+local espLines = {}
+
+-- ESP Toggles
+local espEnabled = {
+    Players = true,
+    Rake = true,
+    Batteries = true,
+    Crates = true,
+    LineESP = true,
+    Fullbright = true
+}
+
+-- === GUI Creation === --
+local gui = Instance.new("ScreenGui", CoreGui)
+gui.Name = "RakeEnhancedMenu"
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 250, 0, 340)
+frame.Position = UDim2.new(0, 100, 0, 100)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Visible = true
+
+local uilist = Instance.new("UIListLayout", frame)
+uilist.Padding = UDim.new(0, 6)
+uilist.FillDirection = Enum.FillDirection.Vertical
+uilist.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function createLabel(text)
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -10, 0, 28)
+    label.Text = text
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.Font = Enum.Font.SourceSansSemibold
+    label.BackgroundTransparency = 1
+    label.TextSize = 18
+    return label
+end
+
+local function createToggle(text, flag)
+    local button = Instance.new("TextButton", frame)
+    button.Size = UDim2.new(1, -10, 0, 32)
+    button.Position = UDim2.new(0, 5, 0, 0)
+    button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Text = "[ON] " .. text
+    button.Font = Enum.Font.SourceSans
+    button.TextSize = 18
+
+    button.MouseButton1Click:Connect(function()
+        espEnabled[flag] = not espEnabled[flag]
+        button.Text = (espEnabled[flag] and "[ON] " or "[OFF] ") .. text
+    end)
+end
+
+-- GUI Elements
+createLabel("🌌 ESP Features")
+createToggle("Player ESP", "Players")
+createToggle("Rake ESP", "Rake")
+createToggle("Battery ESP", "Batteries")
+createToggle("Crate ESP", "Crates")
+createToggle("Line ESP", "LineESP")
+createToggle("Fullbright", "Fullbright")
+
+-- Speed Hack Input
+local speedInput = Instance.new("TextBox", frame)
+speedInput.Size = UDim2.new(1, -10, 0, 30)
+speedInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+speedInput.TextColor3 = Color3.new(1, 1, 1)
+speedInput.Text = "WalkSpeed: 16"
+speedInput.ClearTextOnFocus = false
+speedInput.Font = Enum.Font.SourceSans
+speedInput.TextSize = 18
+speedInput.FocusLost:Connect(function()
+    local speed = tonumber(speedInput.Text:match("%d+"))
+    if speed and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = speed
+        speedInput.Text = "WalkSpeed: " .. speed
+    else
+        speedInput.Text = "WalkSpeed: 16"
+    end
+end)
+
+-- === Fullbright System === --
+local function applyFullbright()
+    if not espEnabled.Fullbright then return end
+    Lighting.Brightness = 2
+    Lighting.ClockTime = 12
+    Lighting.FogEnd = 100000
+    Lighting.GlobalShadows = false
+end
+
+-- === ESP Drawing === --
+function createESP(target, name, color)
+    if not Drawing then return end
+
+    local text = Drawing.new("Text")
+    text.Size = 14
+    text.Center = true
+    text.Outline = true
+    text.Color = color
+    text.Text = name
+    text.Visible = true
+
+    local line = Drawing.new("Line")
+    line.Color = color
+    line.Thickness = 1.5
+    line.Visible = espEnabled.LineESP
+
+    espObjects[target] = text
+    espLines[target] = line
+end
+
+function updateESP()
+    for target, text in pairs(espObjects) do
+        if not target or not target.Parent then
+            text:Remove()
+            if espLines[target] then espLines[target]:Remove() end
+            espObjects[target] = nil
+            espLines[target] = nil
+        else
+            local position = target:IsA("Model") and target:FindFirstChild("HumanoidRootPart") and target.HumanoidRootPart.Position or target.Position
+            local screenPos, onScreen = Camera:WorldToViewportPoint(position)
+
+            if onScreen then
+                text.Position = Vector2.new(screenPos.X, screenPos.Y)
+                text.Visible = true
+
+                if espEnabled.LineESP and espLines[target] then
+                    espLines[target].From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    espLines[target].To = Vector2.new(screenPos.X, screenPos.Y)
+                    espLines[target].Visible = true
+                elseif espLines[target] then
+                    espLines[target].Visible = false
+                end
+            else
+                text.Visible = false
+                if espLines[target] then espLines[target].Visible = false end
+            end
+        end
+    end
+end
+
+function scanEntities()
+    -- Players
+    if espEnabled.Players then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                if not espObjects[plr.Character] then
+                    createESP(plr.Character, plr.Name, Color3.fromRGB(0, 255, 0))
+                end
+            end
+        end
+    end
+
+    -- Rake, batteries, crates
+    for _, obj in pairs(workspace:GetDescendants()) do
+        local name = obj.Name:lower()
+        if espEnabled.Rake and name:find("rake") and obj:FindFirstChild("HumanoidRootPart") and not espObjects[obj] then
+            createESP(obj, "RAKE", Color3.fromRGB(255, 0, 0))
+        elseif espEnabled.Batteries and name:find("battery") and not espObjects[obj] then
+            createESP(obj, "Battery", Color3.fromRGB(255, 255, 0))
+        elseif espEnabled.Crates and name:find("crate") and not espObjects[obj] then
+            createESP(obj, "Crate", Color3.fromRGB(0, 200, 255))
+        end
+    end
+end
+
+-- Toggle GUI with M
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.M then
+        frame.Visible = not frame.Visible
+    end
+end)
+
+-- Render Loop
+RunService.RenderStepped:Connect(function()
+    scanEntities()
+    updateESP()
+    applyFullbright()
+end)
