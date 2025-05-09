@@ -249,3 +249,330 @@ RunService.RenderStepped:Connect(function()
     updateESP()
     applyFullbright()
 end)
+
+-- Teleport to Locations
+local tpLocations = {
+    ["Safehouse"] = workspace:FindFirstChild("Safehouse"),
+    ["Power Station"] = workspace:FindFirstChild("PowerStation"),
+    ["Watchtower"] = workspace:FindFirstChild("WatchTower"),
+    ["Shop"] = workspace:FindFirstChild("Shop")
+}
+
+for name, part in pairs(tpLocations) do
+    if part then
+        createButton("Teleport: "..name, function()
+            local char = game.Players.LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char:FindFirstChild("HumanoidRootPart").CFrame = part.CFrame + Vector3.new(0, 5, 0)
+            end
+        end)
+    end
+end
+
+-- Day/Night Time Display
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(0, 200, 0, 25)
+textLabel.Position = UDim2.new(0, 10, 0, 10)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.new(1, 1, 1)
+textLabel.TextScaled = true
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.Parent = ScreenGui
+
+game:GetService("RunService").RenderStepped:Connect(function()
+    local lighting = game:GetService("Lighting")
+    local timeNum = tonumber(lighting:GetMinutesAfterMidnight())
+    local hour = math.floor(timeNum / 60)
+    local minute = math.floor(timeNum % 60)
+    textLabel.Text = string.format("Time: %02d:%02d", hour, minute)
+end)
+
+-- Battery ESP Only
+local batteryESPEnabled = false
+local batteryESPList = {}
+
+function updateBatteryESP()
+    for _, drawing in pairs(batteryESPList) do
+        drawing:Remove()
+    end
+    table.clear(batteryESPList)
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:lower():find("battery") then
+            local box = Drawing.new("Text")
+            box.Size = 16
+            box.Center = true
+            box.Outline = true
+            box.Color = Color3.fromRGB(255, 255, 0)
+            box.Visible = true
+            box.Text = "🔋 Battery"
+            table.insert(batteryESPList, box)
+
+            coroutine.wrap(function()
+                while obj and obj.Parent and batteryESPEnabled do
+                    local pos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(obj.Position)
+                    box.Position = Vector2.new(pos.X, pos.Y)
+                    box.Visible = onScreen
+                    task.wait()
+                end
+                box:Remove()
+            end)()
+        end
+    end
+end
+
+createToggle("Battery ESP", false, function(state)
+    batteryESPEnabled = state
+    if state then
+        updateBatteryESP()
+    else
+        for _, drawing in pairs(batteryESPList) do
+            drawing:Remove()
+        end
+        table.clear(batteryESPList)
+    end
+end)
+
+-- Sound ESP for Rake growls and screams
+local soundESPEnabled = false
+local rakeSounds = {}
+
+-- Add Rake sounds to track
+function trackRakeSounds()
+    for _, sound in ipairs(workspace:GetDescendants()) do
+        if sound:IsA("Sound") and sound.Name:lower():find("rake") then
+            table.insert(rakeSounds, sound)
+        end
+    end
+end
+
+function updateSoundESP()
+    for _, sound in pairs(rakeSounds) do
+        local label = Drawing.new("Text")
+        label.Size = 14
+        label.Center = true
+        label.Outline = true
+        label.Color = Color3.fromRGB(255, 0, 0)
+        label.Text = "Rake Sound!"
+        label.Visible = true
+
+        coroutine.wrap(function()
+            while sound and sound.Parent and soundESPEnabled do
+                local soundPos = sound.Parent and sound.Parent.PrimaryPart and sound.Parent.PrimaryPart.Position
+                if soundPos then
+                    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(soundPos)
+                    label.Position = Vector2.new(screenPos.X, screenPos.Y - 16)
+                    label.Visible = onScreen
+                end
+                task.wait()
+            end
+            label:Remove()
+        end)()
+    end
+end
+
+createToggle("Sound ESP (Rake Growl/Screams)", false, function(state)
+    soundESPEnabled = state
+    if state then
+        trackRakeSounds()
+        updateSoundESP()
+    else
+        -- Remove all Sound ESPs
+        for _, label in pairs(rakeSoundESPList) do
+            label:Remove()
+        end
+        table.clear(rakeSoundESPList)
+    end
+end)
+
+-- Auto Hide GUI Toggle
+local lastPosition = LocalPlayer.Character.HumanoidRootPart.Position
+local autoHideEnabled = false
+local guiVisibility = true
+
+function autoHideGUI()
+    local currentPosition = LocalPlayer.Character.HumanoidRootPart.Position
+    if (currentPosition - lastPosition).Magnitude > 0.1 then
+        gui.Visible = false
+    else
+        gui.Visible = guiVisibility
+    end
+    lastPosition = currentPosition
+end
+
+createToggle("Auto Hide GUI When Moving", false, function(state)
+    autoHideEnabled = state
+end)
+
+RunService.RenderStepped:Connect(function()
+    if autoHideEnabled then
+        autoHideGUI()
+    end
+end)
+
+-- Teleport to Rake (Quick Teleport)
+local rakePosition = nil
+
+-- Function to find the Rake
+function findRake()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name:lower() == "rake" then
+            rakePosition = obj.PrimaryPart.Position
+            return rakePosition
+        end
+    end
+end
+
+createButton("Teleport to Rake", function()
+    if rakePosition then
+        LocalPlayer.Character:MoveTo(rakePosition)
+    else
+        findRake()
+        if rakePosition then
+            LocalPlayer.Character:MoveTo(rakePosition)
+        else
+            print("Rake not found!")
+        end
+    end
+end)
+
+-- Night Vision (Enhance visibility in dark areas)
+local nightVisionEnabled = false
+
+function toggleNightVision()
+    if nightVisionEnabled then
+        game.Lighting.Ambient = Color3.fromRGB(50, 50, 50)
+        game.Lighting.OutdoorAmbient = Color3.fromRGB(50, 50, 50)
+        game.Lighting.Brightness = 2
+    else
+        game.Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        game.Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        game.Lighting.Brightness = 1
+    end
+end
+
+createToggle("Night Vision", false, function(state)
+    nightVisionEnabled = state
+    toggleNightVision()
+end)
+
+-- Random Events (Random Hazards or Events)
+local randomEventEnabled = false
+
+function triggerRandomEvent()
+    local eventType = math.random(1, 3)
+
+    if eventType == 1 then
+        -- Rake Spawns Near Player
+        local playerPosition = LocalPlayer.Character.HumanoidRootPart.Position
+        local newRake = game.ReplicatedStorage:WaitForChild("Rake"):Clone()
+        newRake:SetPrimaryPartCFrame(CFrame.new(playerPosition.X + math.random(-10, 10), playerPosition.Y, playerPosition.Z + math.random(-10, 10)))
+        newRake.Parent = workspace
+    elseif eventType == 2 then
+        -- Earthquake Effect (Shakes the screen)
+        local magnitude = math.random(5, 10)
+        game:GetService("TweenService"):Create(workspace.CurrentCamera, TweenInfo.new(0.5), { FieldOfView = magnitude }):Play()
+    elseif eventType == 3 then
+        -- Sudden Darkness
+        game.Lighting.Ambient = Color3.fromRGB(0, 0, 0)
+        game.Lighting.OutdoorAmbient = Color3.fromRGB(0, 0, 0)
+    end
+end
+
+createToggle("Random Events", false, function(state)
+    randomEventEnabled = state
+    if state then
+        while randomEventEnabled do
+            triggerRandomEvent()
+            task.wait(30)  -- Event triggers every 30 seconds
+        end
+    end
+end)
+
+-- Rake Spawn Prediction (Predict Rake's Next Location)
+local rakePredictionEnabled = false
+local predictedRakePosition = nil
+
+function predictRakeSpawn()
+    local possibleSpawns = {
+        Vector3.new(100, 0, 100),
+        Vector3.new(-100, 0, -100),
+        Vector3.new(200, 0, -200),
+        Vector3.new(-200, 0, 200),
+    }
+    predictedRakePosition = possibleSpawns[math.random(1, #possibleSpawns)]
+end
+
+function displayRakePrediction()
+    if predictedRakePosition then
+        local box = Drawing.new("Square")
+        box.Color = Color3.fromRGB(255, 255, 255)
+        box.Thickness = 2
+        box.Filled = false
+        box.Visible = true
+
+        coroutine.wrap(function()
+            while rakePredictionEnabled do
+                local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(predictedRakePosition)
+                box.Position = Vector2.new(screenPos.X - 10, screenPos.Y - 10)
+                box.Size = Vector2.new(20, 20)
+                box.Visible = onScreen
+                task.wait()
+            end
+            box:Remove()
+        end)()
+    end
+end
+
+createToggle("Rake Spawn Prediction", false, function(state)
+    rakePredictionEnabled = state
+    if state then
+        predictRakeSpawn()
+        displayRakePrediction()
+    else
+        predictedRakePosition = nil
+    end
+end)
+
+-- Item Auto-Collect (Automatically Collect Items Like Batteries or Crates)
+local autoCollectEnabled = false
+
+function autoCollectItems()
+    for _, item in pairs(workspace:GetChildren()) do
+        if item:IsA("Part") and item.Name:match("Battery") or item.Name:match("Crate") then
+            local itemPosition = item.Position
+            local playerPosition = LocalPlayer.Character.HumanoidRootPart.Position
+            local distance = (itemPosition - playerPosition).Magnitude
+            if distance < 5 then  -- Collect if within 5 studs
+                item:Destroy()  -- Simulate collecting the item
+                print("Item collected!")
+            end
+        end
+    end
+end
+
+createToggle("Item Auto-Collect", false, function(state)
+    autoCollectEnabled = state
+    if state then
+        while autoCollectEnabled do
+            autoCollectItems()
+            task.wait(1)
+        end
+    end
+end)
+
+-- Quick Escape (Instantly Escape Dangerous Situations)
+local quickEscapeEnabled = false
+
+function quickEscape()
+    local playerPosition = LocalPlayer.Character.HumanoidRootPart.Position
+    local safePosition = Vector3.new(math.random(-200, 200), playerPosition.Y, math.random(-200, 200))  -- Random safe position
+    LocalPlayer.Character:MoveTo(safePosition)
+end
+
+createToggle("Quick Escape", false, function(state)
+    quickEscapeEnabled = state
+    if state then
+        quickEscape()
+    end
+end)
