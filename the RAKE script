@@ -11,16 +11,18 @@ local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
 local espObjects = {}
 local espLines = {}
+local lineOrigin = "Middle"  -- Default line origin (can be "Bottom", "Middle", "Top")
 
 -- ESP Toggles
 local espEnabled = {
     Players = true,
     Rake = true,
-    Batteries = true,
-    Crates = true,
     LineESP = true,
-    Fullbright = true
+    Fullbright = true,
+    BoxESP = true  -- Added Box ESP toggle
 }
+
+local espRenderDistance = 100  -- Default render distance
 
 -- === GUI Creation === --
 local gui = Instance.new("ScreenGui", CoreGui)
@@ -28,7 +30,7 @@ gui.Name = "RakeEnhancedMenu"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 250, 0, 340)
+frame.Size = UDim2.new(0, 250, 0, 420)
 frame.Position = UDim2.new(0, 100, 0, 100)
 frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BorderSizePixel = 0
@@ -72,10 +74,28 @@ end
 createLabel("🌌 ESP Features")
 createToggle("Player ESP", "Players")
 createToggle("Rake ESP", "Rake")
-createToggle("Battery ESP", "Batteries")
-createToggle("Crate ESP", "Crates")
 createToggle("Line ESP", "LineESP")
 createToggle("Fullbright", "Fullbright")
+createToggle("Box ESP", "BoxESP")  -- Added Box ESP toggle
+
+-- ESP Render Distance Slider
+local renderDistanceInput = Instance.new("TextBox", frame)
+renderDistanceInput.Size = UDim2.new(1, -10, 0, 30)
+renderDistanceInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+renderDistanceInput.TextColor3 = Color3.new(1, 1, 1)
+renderDistanceInput.Text = "Render Distance: 100"
+renderDistanceInput.ClearTextOnFocus = false
+renderDistanceInput.Font = Enum.Font.SourceSans
+renderDistanceInput.TextSize = 18
+renderDistanceInput.FocusLost:Connect(function()
+    local newDistance = tonumber(renderDistanceInput.Text:match("%d+"))
+    if newDistance and newDistance > 0 then
+        espRenderDistance = newDistance
+        renderDistanceInput.Text = "Render Distance: " .. espRenderDistance
+    else
+        renderDistanceInput.Text = "Render Distance: " .. espRenderDistance
+    end
+end)
 
 -- Speed Hack Input
 local speedInput = Instance.new("TextBox", frame)
@@ -109,48 +129,87 @@ end
 function createESP(target, name, color)
     if not Drawing then return end
 
-    local text = Drawing.new("Text")
-    text.Size = 14
-    text.Center = true
-    text.Outline = true
-    text.Color = color
-    text.Text = name
-    text.Visible = true
+    local espNameText = Drawing.new("Text")
+    espNameText.Size = 14
+    espNameText.Center = true
+    espNameText.Outline = true
+    espNameText.Color = color
+    espNameText.Text = name
+    espNameText.Visible = true
 
-    local line = Drawing.new("Line")
-    line.Color = color
-    line.Thickness = 1.5
-    line.Visible = espEnabled.LineESP
+    local espDistanceText = Drawing.new("Text")
+    espDistanceText.Size = 12
+    espDistanceText.Center = true
+    espDistanceText.Outline = true
+    espDistanceText.Color = Color3.new(1, 1, 1)
+    espDistanceText.Text = "100m"  -- Default distance placeholder
+    espDistanceText.Visible = true
 
-    espObjects[target] = text
-    espLines[target] = line
+    -- Box ESP
+    local espBox = Drawing.new("Square")
+    espBox.Color = color
+    espBox.Thickness = 1  -- Thinner box
+    espBox.Filled = false
+    espBox.Visible = espEnabled.BoxESP
+
+    -- Line ESP
+    local espLine = Drawing.new("Line")
+    espLine.Color = color
+    espLine.Thickness = 1  -- Thinner line
+    espLine.Visible = espEnabled.LineESP
+
+    espObjects[target] = { espNameText, espDistanceText, espBox, espLine }
 end
 
 function updateESP()
-    for target, text in pairs(espObjects) do
+    for target, texts in pairs(espObjects) do
         if not target or not target.Parent then
-            text:Remove()
-            if espLines[target] then espLines[target]:Remove() end
+            texts[1]:Remove()
+            texts[2]:Remove()
+            if texts[3] then texts[3]:Remove() end
+            if texts[4] then texts[4]:Remove() end
             espObjects[target] = nil
-            espLines[target] = nil
         else
             local position = target:IsA("Model") and target:FindFirstChild("HumanoidRootPart") and target.HumanoidRootPart.Position or target.Position
             local screenPos, onScreen = Camera:WorldToViewportPoint(position)
 
             if onScreen then
-                text.Position = Vector2.new(screenPos.X, screenPos.Y)
-                text.Visible = true
+                local distance = math.floor((Camera.CFrame.Position - position).Magnitude)
 
-                if espEnabled.LineESP and espLines[target] then
-                    espLines[target].From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    espLines[target].To = Vector2.new(screenPos.X, screenPos.Y)
-                    espLines[target].Visible = true
-                elseif espLines[target] then
-                    espLines[target].Visible = false
+                -- Only render ESP if within the set distance
+                if distance <= espRenderDistance then
+                    texts[1].Position = Vector2.new(screenPos.X, screenPos.Y - 16)
+                    texts[2].Position = Vector2.new(screenPos.X, screenPos.Y - 2)
+                    texts[1].Visible = true
+                    texts[2].Visible = true
+                    texts[2].Text = distance .. "m"
+
+                    -- Box ESP adjustment based on distance
+                    if espEnabled.BoxESP and texts[3] then
+                        local boxSize = math.max(10, 100 / (distance / 10))  -- Make box smaller with distance
+                        texts[3].Size = Vector2.new(boxSize, boxSize * 1.5)  -- Keep aspect ratio (box height = 1.5 * width)
+                        texts[3].Position = Vector2.new(screenPos.X - boxSize / 2, screenPos.Y - boxSize / 2)
+                        texts[3].Visible = true
+                    end
+
+                    -- Line ESP (Line origin adjustment)
+                    if espEnabled.LineESP and texts[4] then
+                        local lineFromY = lineOrigin == "Top" and -10 or (lineOrigin == "Bottom" and 10 or 0)
+                        texts[4].From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2 + lineFromY)
+                        texts[4].To = Vector2.new(screenPos.X, screenPos.Y)
+                        texts[4].Visible = true
+                    end
+                else
+                    texts[1].Visible = false
+                    texts[2].Visible = false
+                    if texts[3] then texts[3].Visible = false end
+                    if texts[4] then texts[4].Visible = false end
                 end
             else
-                text.Visible = false
-                if espLines[target] then espLines[target].Visible = false end
+                texts[1].Visible = false
+                texts[2].Visible = false
+                if texts[3] then texts[3].Visible = false end
+                if texts[4] then texts[4].Visible = false end
             end
         end
     end
@@ -168,15 +227,11 @@ function scanEntities()
         end
     end
 
-    -- Rake, batteries, crates
+    -- Rake
     for _, obj in pairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
         if espEnabled.Rake and name:find("rake") and obj:FindFirstChild("HumanoidRootPart") and not espObjects[obj] then
             createESP(obj, "RAKE", Color3.fromRGB(255, 0, 0))
-        elseif espEnabled.Batteries and name:find("battery") and not espObjects[obj] then
-            createESP(obj, "Battery", Color3.fromRGB(255, 255, 0))
-        elseif espEnabled.Crates and name:find("crate") and not espObjects[obj] then
-            createESP(obj, "Crate", Color3.fromRGB(0, 200, 255))
         end
     end
 end
@@ -193,65 +248,4 @@ RunService.RenderStepped:Connect(function()
     scanEntities()
     updateESP()
     applyFullbright()
-end)
-
---// MiniMap
-local minimapFrame = Instance.new("Frame", gui)
-minimapFrame.Size = UDim2.new(0, 200, 0, 200)
-minimapFrame.Position = UDim2.new(1, -220, 0, 20)
-minimapFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-minimapFrame.BorderSizePixel = 0
-minimapFrame.Name = "MiniMap"
-
-local uicorner = Instance.new("UICorner", minimapFrame)
-uicorner.CornerRadius = UDim.new(0, 6)
-
-local origin = Vector3.new(0, 0, 0)
-local scale = 0.2
-
-local function createDot(color)
-    local dot = Instance.new("Frame")
-    dot.Size = UDim2.new(0, 4, 0, 4)
-    dot.AnchorPoint = Vector2.new(0.5, 0.5)
-    dot.BackgroundColor3 = color
-    dot.BorderSizePixel = 0
-    dot.Parent = minimapFrame
-    return dot
-end
-
-local playerDots = {}
-
-RunService.RenderStepped:Connect(function()
-    for _, v in pairs(playerDots) do
-        if v and v.Parent then v:Destroy() end
-    end
-    playerDots = {}
-
-    -- Local player
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local pos = LocalPlayer.Character.HumanoidRootPart.Position
-        local dot = createDot(Color3.new(0, 1, 0))
-        dot.Position = UDim2.new(0.5, (pos.X - origin.X) * scale, 0.5, (pos.Z - origin.Z) * scale)
-        table.insert(playerDots, dot)
-    end
-
-    -- Other players
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local pos = plr.Character.HumanoidRootPart.Position
-            local dot = createDot(Color3.new(1, 0, 0))
-            dot.Position = UDim2.new(0.5, (pos.X - origin.X) * scale, 0.5, (pos.Z - origin.Z) * scale)
-            table.insert(playerDots, dot)
-        end
-    end
-
-    -- Rake
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("rake") and obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") then
-            local pos = obj.HumanoidRootPart.Position
-            local dot = createDot(Color3.new(0, 0.6, 1))
-            dot.Position = UDim2.new(0.5, (pos.X - origin.X) * scale, 0.5, (pos.Z - origin.Z) * scale)
-            table.insert(playerDots, dot)
-        end
-    end
 end)
